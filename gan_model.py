@@ -1,5 +1,7 @@
 import keras
 import tensorflow as tf
+import tensorflow_gan as tfgan
+
 
 from keras import layers
 # from keras import ops
@@ -8,9 +10,35 @@ from keras import layers
 import numpy as np
 import imageio
 
+class FID_metric(tf.keras.metrics.Metric):
+
+  def __init__(self, name='fid_metric', **kwargs):
+    super(FID_metric, self).__init__(name=name, **kwargs)
+    self.fid = self.add_weight(name='fid', initializer='zeros')
+
+  def update_state(self, real_imgs, fake_imgs):
+    real_images = tf.image.resize(real_imgs, [299, 299], method=tf.image.ResizeMethod.BILINEAR)
+    fake_images = tf.image.resize(fake_imgs, [299, 299], method=tf.image.ResizeMethod.BILINEAR)
+
+    real_tensor = tf.concat((real_images, real_images), axis=3)
+    real_tensor = tf.concat((real_tensor, real_images), axis=3)
+
+    fake_tensor = tf.concat((fake_images, fake_images), axis=3)
+    fake_tensor = tf.concat((fake_tensor, fake_images), axis=3)
+
+    fid = tfgan.eval.frechet_inception_distance(real_tensor, fake_tensor, num_batches=64)
+    self.fid.assign(fid)
+    
+  def result(self):
+    return self.fid
+
+  def reset_states(self):
+    # The state of the metric will be reset at the start of each epoch.
+    self.fid.assign(0.)
+
 # https://keras.io/examples/generative/conditional_gan/
 class CGAN(tf.keras.Model):
-    def __init__(self, discriminator, generator, latent_dim, image_size, num_classes):
+    def __init__(self, discriminator, generator, latent_dim, image_size, num_classes, d_optimizer, g_optimizer, loss_fn):
         super().__init__()
         self.image_size = image_size
         self.num_classes = num_classes
@@ -25,15 +53,19 @@ class CGAN(tf.keras.Model):
         self.gen_loss_tracker = tf.keras.metrics.Mean(name="generator_loss")
         self.disc_loss_tracker = tf.keras.metrics.Mean(name="discriminator_loss")
 
+        self.d_optimizer = d_optimizer
+        self.g_optimizer = g_optimizer
+        self.loss_fn = loss_fn
+
     @property
     def metrics(self):
         return [self.gen_loss_tracker, self.disc_loss_tracker]
 
-    def compile(self, d_optimizer, g_optimizer, loss_fn):
-        super().compile()
-        self.d_optimizer = d_optimizer
-        self.g_optimizer = g_optimizer
-        self.loss_fn = loss_fn
+    # def compile(self, d_optimizer, g_optimizer, loss_fn):
+    #     super().compile()
+    #     self.d_optimizer = d_optimizer
+    #     self.g_optimizer = g_optimizer
+    #     self.loss_fn = loss_fn
     
     def test_step(self, data):
         real_images, one_hot_labels = data
@@ -58,7 +90,7 @@ class CGAN(tf.keras.Model):
         )
 
         # Decode the noise (guided by labels) to fake images.
-        generated_images = self.generator(random_vector_labels)
+        generated_images = self.generator(random_vector_labels, training=False)
 
         fake_image_and_labels = tf.concat(
             [generated_images, image_one_hot_labels], -1
@@ -73,7 +105,7 @@ class CGAN(tf.keras.Model):
             [tf.ones((batch_size, 1)), tf.zeros((batch_size, 1))], axis=0
         )
 
-        predictions = self.discriminator(combined_images)
+        predictions = self.discriminator(combined_images, training=True)
         d_loss = self.loss_fn(labels, predictions)
 
         fake_image_and_labels = tf.concat(
@@ -117,7 +149,7 @@ class CGAN(tf.keras.Model):
         )
 
         # Decode the noise (guided by labels) to fake images.
-        generated_images = self.generator(random_vector_labels)
+        generated_images = self.generator(random_vector_labels, training=False)
 
         # Combine them with real images. Note that we are concatenating the labels
         # with these images here.
@@ -136,7 +168,7 @@ class CGAN(tf.keras.Model):
 
         # Train the discriminator.
         with tf.GradientTape() as tape:
-            predictions = self.discriminator(combined_images)
+            predictions = self.discriminator(combined_images, training=True)
             d_loss = self.loss_fn(labels, predictions)
         grads = tape.gradient(d_loss, self.discriminator.trainable_weights)
         self.d_optimizer.apply_gradients(
@@ -158,11 +190,11 @@ class CGAN(tf.keras.Model):
         # Train the generator (note that we should *not* update the weights
         # of the discriminator)!
         with tf.GradientTape() as tape:
-            fake_images = self.generator(random_vector_labels)
+            fake_images = self.generator(random_vector_labels, training=True)
             fake_image_and_labels = tf.concat(
                 [fake_images, image_one_hot_labels], -1
             )
-            predictions = self.discriminator(fake_image_and_labels)
+            predictions = self.discriminator(fake_image_and_labels, training=False)
             g_loss = self.loss_fn(misleading_labels, predictions)
         grads = tape.gradient(g_loss, self.generator.trainable_weights)
         self.g_optimizer.apply_gradients(zip(grads, self.generator.trainable_weights))
@@ -170,6 +202,8 @@ class CGAN(tf.keras.Model):
         # Monitor loss.
         self.gen_loss_tracker.update_state(g_loss)
         self.disc_loss_tracker.update_state(d_loss)
+        
+
         return {
             "g_loss": self.gen_loss_tracker.result(),
             "d_loss": self.disc_loss_tracker.result(),

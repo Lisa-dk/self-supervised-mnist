@@ -15,10 +15,10 @@ def generate_and_save_images(model, epoch, test_input):
     # This is so all layers run in inference mode (batchnorm).
     predictions = model(test_input, training=False)
 
-    fig = plt.figure(figsize=(4, 6))
+    fig = plt.figure(figsize=(10, 10))
 
     for i in range(predictions.shape[0]):
-        plt.subplot(4, 6, i+1)
+        plt.subplot(10,10, i+1)
         plt.imshow(predictions[i, :, :, 0], cmap='gray')
         plt.axis('off')
 
