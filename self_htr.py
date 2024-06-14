@@ -13,9 +13,7 @@ class Self_HTR:
     
     def get_vgg_model(self, n_layer, summary=False):
         model = tf.keras.applications.VGG16(weights='imagenet', include_top=False, input_shape=(32, 32, 3), pooling=None)
-        # model.summary()
-        # for num, layer in enumerate(model.layers):
-        # 	print(num, layer)
+
         input_data = tf.keras.Input(shape=(28, 28, 3))
         resized_input = tf.keras.layers.Resizing(32, 32)(input_data)
         desired_layer_output = tf.keras.models.Sequential(model.layers[:n_layer])(resized_input)
@@ -44,8 +42,9 @@ class Self_HTR:
         accuracies = []
         for image_batch in data:
             x_val, y_val = image_batch
-            # print(x_val.shape, y_val.shape, tf.shape(x_val))
+    
             y_preds = self.htr_model.predict(x_val, verbose=0)
+
             y_preds_argmax = np.argmax(y_preds, axis=1)
             accuracy = accuracy_score(y_true=np.argmax(y_val, axis=1), y_pred=y_preds_argmax)
             accuracies.append(accuracy)
@@ -53,7 +52,6 @@ class Self_HTR:
             random_latent_vectors = tf.random.normal(
                 shape=(tf.shape(x_val)[0], self.latent_dim), seed=1337
             )
-            # print(tf.shape(random_latent_vectors))
 
             random_vector_labels = tf.concat(
                     [random_latent_vectors, y_preds], axis=1
@@ -61,12 +59,11 @@ class Self_HTR:
             
             synth_imgs = self.generator(random_vector_labels, training=False)
 
-            # val_loss = tf.reduce_mean((vgg_model(images_in, training=False) - vgg_model(images_gen, training=False))**2)
+
             val_loss = self.loss_fn(x_val, synth_imgs)
-            # val_loss = tf.keras.losses.BinaryCrossentropy()(x_val, synth_imgs)
             val_losses.append(val_loss)
+
         np.set_printoptions(suppress=True, precision=4)
-        # print(np.round(y_preds[:16], 4))
         return np.mean(val_losses), np.mean(accuracies), synth_imgs[:16], x_val[:16], y_val[:16], y_preds[:16]
     
     # @tf.function
@@ -76,7 +73,6 @@ class Self_HTR:
         random_latent_vectors = tf.random.normal(
             shape=(tf.shape(images)[0], self.latent_dim), seed=1337
         )
-        # random_label_noise = tf.random.normal(shape=(tf.shape(images)[0], 10), mean=0, stddev=0.2)
 
         with tf.GradientTape() as tape:
             pred_labels = self.htr_model(images, training=True)
@@ -86,14 +82,9 @@ class Self_HTR:
             )
 
             synth_imgs = self.generator(random_vector_labels, training=False)
-            # loss_mse = tf.reduce_mean((gen_imgs - images) ** 2)
-            # loss_ssim = 1 - tf.reduce_mean(tf.image.ssim(images, gen_imgs, 1, filter_size=7))
-            # loss = 10*loss_mse + loss_ssim #- 0.1*tf.reduce_mean(tf.reduce_max(pred_labels, axis=1))
 
-            # loss = tf.reduce_mean((vgg_model(images_in, training=False) - vgg_model(images_gen, training=False))**2)
             loss = self.loss_fn(images, synth_imgs)
-            # loss = tf.keras.losses.BinaryCrossentropy()(images, gen_imgs)
-            
+
         grads = tape.gradient(loss, self.htr_model.trainable_weights)
         self.optimizer.apply_gradients(zip(grads, self.htr_model.trainable_weights))
 

@@ -1,41 +1,7 @@
-import keras
 import tensorflow as tf
 import tensorflow_gan as tfgan
 
-
-from keras import layers
-# from keras import ops
-# from tensorflow_docs.vis import embed
-
-import numpy as np
-import imageio
-
-class FID_metric(tf.keras.metrics.Metric):
-
-  def __init__(self, name='fid_metric', **kwargs):
-    super(FID_metric, self).__init__(name=name, **kwargs)
-    self.fid = self.add_weight(name='fid', initializer='zeros')
-
-  def update_state(self, real_imgs, fake_imgs):
-    real_images = tf.image.resize(real_imgs, [299, 299], method=tf.image.ResizeMethod.BILINEAR)
-    fake_images = tf.image.resize(fake_imgs, [299, 299], method=tf.image.ResizeMethod.BILINEAR)
-
-    real_tensor = tf.concat((real_images, real_images), axis=3)
-    real_tensor = tf.concat((real_tensor, real_images), axis=3)
-
-    fake_tensor = tf.concat((fake_images, fake_images), axis=3)
-    fake_tensor = tf.concat((fake_tensor, fake_images), axis=3)
-
-    fid = tfgan.eval.frechet_inception_distance(real_tensor, fake_tensor, num_batches=64)
-    self.fid.assign(fid)
-    
-  def result(self):
-    return self.fid
-
-  def reset_states(self):
-    # The state of the metric will be reset at the start of each epoch.
-    self.fid.assign(0.)
-
+# The CGAN class (including comments) was adapted from Keras: 
 # https://keras.io/examples/generative/conditional_gan/
 class CGAN(tf.keras.Model):
     def __init__(self, discriminator, generator, latent_dim, image_size, num_classes, d_optimizer, g_optimizer, loss_fn):
@@ -61,11 +27,6 @@ class CGAN(tf.keras.Model):
     def metrics(self):
         return [self.gen_loss_tracker, self.disc_loss_tracker]
 
-    # def compile(self, d_optimizer, g_optimizer, loss_fn):
-    #     super().compile()
-    #     self.d_optimizer = d_optimizer
-    #     self.g_optimizer = g_optimizer
-    #     self.loss_fn = loss_fn
     
     def test_step(self, data):
         real_images, one_hot_labels = data
